@@ -1,0 +1,16 @@
+[Unit]
+Description=Service to ping home router every minute
+After=network.target
+
+[Service]
+User=root
+Group=root
+
+Type=simple
+ExecStart=/opt/pingtests -i www.google.com                                   
+TimeoutStopSec=20
+KillMode=process
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target
