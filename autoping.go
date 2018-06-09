@@ -17,7 +17,7 @@ import (
 )
 
 // Set up flags, loggers and global variables
-var importFlag = flag.String("i", "", "name of import file")
+var importFlag = flag.String("i", "", "IP address or hostname to be pinged")
 var pLog, eLog, oLog *log.Logger
 var lsPing time.Time // lsPing holds the last successful ping time
 var ipAddr string    // User supplied IP address to ping to
