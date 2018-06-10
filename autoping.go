@@ -72,7 +72,7 @@ func runPing() {
 	// Set up pinger and handle errors
 	pinger, err := ping.NewPinger(ipAddr)
 	if err != nil {
-		eLog.Printf("ERROR: %s\n", err.Error())
+		eLog.Printf("ERROR: %T - %s\n", err, err.Error())
 		if lsPing.Year() == time.Now().Year() && time.Now().Sub(lsPing) > 2*time.Minute {
 			oLog.Printf("Lost contact. Outage duration %.0f minutes",
 				time.Now().Sub(lsPing).Minutes())
