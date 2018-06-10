@@ -7,6 +7,7 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"net"
 	"os"
 	"os/signal"
 	"runtime/pprof"
@@ -16,11 +17,18 @@ import (
 	ping "github.com/sparrc/go-ping"
 )
 
+type connTracker struct {
+	isOutage           bool
+	lastSuccessfulPing time.Time
+	outageDuration     time.Duration
+}
+
 // Set up flags, loggers and global variables
 var importFlag = flag.String("i", "", "IP address or hostname to be pinged")
 var pLog, eLog, oLog *log.Logger
-var lsPing time.Time // lsPing holds the last successful ping time
-var ipAddr string    // User supplied IP address to ping to
+var ipAddr string // User supplied IP address to ping to
+
+var connInfo = connTracker{isOutage: false}
 
 func main() {
 	// Parse user flags
@@ -70,15 +78,22 @@ func main() {
 // Separate function to run pings
 func runPing() {
 	// Set up pinger and handle errors
+	t := time.Now() // Keep track of the time the ping was sent
 	pinger, err := ping.NewPinger(ipAddr)
 	if err != nil {
-		eLog.Printf("ERROR: %T - %s\n", err, err.Error())
-		if lsPing.Year() == time.Now().Year() && time.Now().Sub(lsPing) > 2*time.Minute {
-			oLog.Printf("Lost contact. Outage duration %.0f minutes",
-				time.Now().Sub(lsPing).Minutes())
+		switch err.(type) {
+		case *net.DNSError:
+			if connInfo.lastSuccessfulPing.Year() == t.Year() &&
+				t.Sub(connInfo.lastSuccessfulPing) > 2*time.Minute {
+				connInfo.isOutage = true
+				connInfo.outageDuration = time.Now().Sub(connInfo.lastSuccessfulPing)
+				oLog.Printf("Lost contact. Outage duration %v",
+					connInfo.outageDuration)
+			}
+		default:
+			panic(err)
 		}
 	} else {
-
 		// Pinger settings.
 		pinger.Count = 1
 		pinger.Timeout = 30 * time.Second
@@ -90,8 +105,7 @@ func runPing() {
 				pkt.Seq, pkt.Rtt)
 		}
 
-		t := time.Now() // Keep track of the time the ping was sent
-		pinger.Run()    // Send the ping
+		pinger.Run() // Send the ping
 
 		// If no packets come back after timeout, start logging outage after 2 min
 		// since last successful ping (2 missed pings in a row)
@@ -100,14 +114,24 @@ func runPing() {
 			// successful ping has to be this year (at the start of the run lsPing is
 			// set to 0) AND the time difference between the last successful ping and
 			// this one has to be more than 2 minutes
-			if lsPing.Year() == time.Now().Year() && t.Sub(lsPing) > 2*time.Minute {
-				oLog.Printf("Lost contact. Outage duration %.0f minutes", t.Sub(lsPing).Minutes())
+			if connInfo.lastSuccessfulPing.Year() == t.Year() &&
+				t.Sub(connInfo.lastSuccessfulPing) > 2*time.Minute {
+				connInfo.isOutage = true
+				connInfo.outageDuration = time.Now().Sub(connInfo.lastSuccessfulPing)
+				oLog.Printf("Lost contact. Outage duration %v minutes",
+					connInfo.outageDuration)
 			}
 		}
 
-		// If we get a packet back, reset lsPing to the time this ping was fired
+		// If we get a packet back, reset last successful ping time to the time this
+		// ping was fired, and reset outage
 		if pinger.Statistics().PacketsRecv > 0 {
-			lsPing = t
+			if connInfo.isOutage {
+				oLog.Printf("Connection restored. Total outage duration %v",
+					connInfo.outageDuration)
+			}
+			connInfo.lastSuccessfulPing = t
+			connInfo.isOutage = false
 		}
 	}
 }
