@@ -73,36 +73,41 @@ func runPing() {
 	pinger, err := ping.NewPinger(ipAddr)
 	if err != nil {
 		eLog.Printf("ERROR: %s\n", err.Error())
-	}
-
-	// Pinger settings.
-	pinger.Count = 1
-	pinger.Timeout = 30 * time.Second
-	pinger.SetPrivileged(true) // Needed to process TCP pings
-
-	// What to do when ping comes in: log results
-	pinger.OnRecv = func(pkt *ping.Packet) {
-		pLog.Printf("%d bytes from %s: icmp_seq=%d time=%v", pkt.Nbytes, pkt.IPAddr,
-			pkt.Seq, pkt.Rtt)
-	}
-
-	t := time.Now() // Keep track of the time the ping was sent
-	pinger.Run()    // Send the ping
-
-	// If no packets come back after timeout, start logging outage after 2 min
-	// since last successful ping (2 missed pings in a row)
-	if pinger.Statistics().PacketsRecv == 0 {
-		// The following conditions have to be met: the ping year of the last
-		// successful ping has to be this year (at the start of the run lsPing is
-		// set to 0) AND the time difference between the last successful ping and
-		// this one has to be more than 2 minutes
-		if lsPing.Year() == time.Now().Year() && t.Sub(lsPing) > 2*time.Minute {
-			oLog.Printf("Lost contact. Outage duration %.0f minutes", t.Sub(lsPing).Minutes())
+		if lsPing.Year() == time.Now().Year() && time.Now().Sub(lsPing) > 2*time.Minute {
+			oLog.Printf("Lost contact. Outage duration %.0f minutes",
+				time.Now().Sub(lsPing).Minutes())
 		}
-	}
+	} else {
 
-	// If we get a packet back, reset lsPing to the time this ping was fired
-	if pinger.Statistics().PacketsRecv > 0 {
-		lsPing = t
+		// Pinger settings.
+		pinger.Count = 1
+		pinger.Timeout = 30 * time.Second
+		pinger.SetPrivileged(true) // Needed to process TCP pings
+
+		// What to do when ping comes in: log results
+		pinger.OnRecv = func(pkt *ping.Packet) {
+			pLog.Printf("%d bytes from %s: icmp_seq=%d time=%v", pkt.Nbytes, pkt.IPAddr,
+				pkt.Seq, pkt.Rtt)
+		}
+
+		t := time.Now() // Keep track of the time the ping was sent
+		pinger.Run()    // Send the ping
+
+		// If no packets come back after timeout, start logging outage after 2 min
+		// since last successful ping (2 missed pings in a row)
+		if pinger.Statistics().PacketsRecv == 0 {
+			// The following conditions have to be met: the ping year of the last
+			// successful ping has to be this year (at the start of the run lsPing is
+			// set to 0) AND the time difference between the last successful ping and
+			// this one has to be more than 2 minutes
+			if lsPing.Year() == time.Now().Year() && t.Sub(lsPing) > 2*time.Minute {
+				oLog.Printf("Lost contact. Outage duration %.0f minutes", t.Sub(lsPing).Minutes())
+			}
+		}
+
+		// If we get a packet back, reset lsPing to the time this ping was fired
+		if pinger.Statistics().PacketsRecv > 0 {
+			lsPing = t
+		}
 	}
 }
