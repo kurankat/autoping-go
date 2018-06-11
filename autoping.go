@@ -22,7 +22,6 @@ type dLatPing struct {
 	prDod   bool          // Did the previous ping of dodgy latency?
 	latency time.Duration // Latency of latest ping
 	pTime   time.Time     // Time latest ping was fired
-	nDodg   int
 }
 
 type connTracker struct {
@@ -30,8 +29,6 @@ type connTracker struct {
 	lastSuccessfulPing time.Time
 	outageDuration     time.Duration
 }
-
-type queue []float64
 
 // Set up flags, loggers and global variables
 var importFlag = flag.String("i", "", "IP address or hostname to be pinged")
@@ -158,46 +155,45 @@ func runPing() {
 func evaluateLatency(t time.Time, rtt time.Duration) {
 	meanLat = time.Duration(latSlice.mean()) * time.Nanosecond
 	cutoff := meanLat * 3
-	prd := false // The provious ping is never dodgy by default
+	prd := false // The previous ping is never dodgy by default
 
 	// Set up the provious dodgy ping to be that of the last item in spl
 	if len(spl) > 0 {
-		fmt.Println("spl is longer than 1. Setting prd to previous")
-		prd = spl[len(spl)-1].crDod
+		prd = spl[len(spl)-1].crDod // Set prd to the RTT of the previous dodgy ping
 	}
 
 	// If the ping RTT is more than the cutoff, treat as a dodgy ping and append
+	// to spl
 	if rtt > cutoff && cutoff > 0 {
 		dPing := dLatPing{crDod: true, prDod: prd, latency: rtt, pTime: t}
 		spl = append(spl, dPing)
-		fmt.Printf("RTT of %v is longer than cutoff of %v. Appendling to spl\n", rtt, cutoff)
-		fmt.Println(latSlice, meanLat)
 	} else {
+		// Because this is a 'normal' ping RTT, append it to queue to keep a running
+		// average
 		latSlice.add(float64(rtt.Nanoseconds()))
-		fmt.Println(latSlice, meanLat)
-		// If the latency is OK, check that of previous. If that one dodgy, keep logging
+
+		// If the latency is OK, check that of previous. If that one is dodgy,
+		// keep logging until two consecutive normal pings
 		if prd {
 			dPing := dLatPing{crDod: false, prDod: prd, latency: rtt, pTime: t}
 			spl = append(spl, dPing)
-			fmt.Printf("RTT of %v is ok but previous bad. Appendling to spl\n", rtt)
-		} else { // If two decent latency pings in a row, then log total and reset spl
+		} else {
+
+			// If two decent latency pings in a row, then log total and reset spl
 			if len(spl) > 2 {
 				startTime := spl[0].pTime
 				endTime := spl[len(spl)-1].pTime
-				fmt.Printf("Period of flakey latency. Duration = %v",
-					endTime.Sub(startTime))
-				oLog.Printf("Period of flakey latency. Duration = %v",
+				oLog.Printf("Period of flakey latency finished. Duration = %v",
 					endTime.Sub(startTime))
 				spl = nil
-			} else {
-				fmt.Println("No current issues")
 			}
-
 		}
 	}
-
 }
 
+type queue []float64 // Queue of RTTs for normal pings to calculate what's normal
+
+// Method to add a ping RTT to the queue, keeping the queue size to a max of 10
 func (q *queue) add(f float64) {
 	iq := []float64(*q)
 	if len(iq) < 10 {
@@ -209,6 +205,7 @@ func (q *queue) add(f float64) {
 	*q = queue(iq)
 }
 
+// Method to return the arithmetic mean of the RTTs in the queue
 func (q *queue) mean() (m float64) {
 	var total float64
 	iq := []float64(*q)
