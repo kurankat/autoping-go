@@ -14,8 +14,17 @@ import (
 	"syscall"
 	"time"
 
+	stat "github.com/gonum/stat"
 	ping "github.com/sparrc/go-ping"
 )
+
+type dLatPing struct {
+	crDod   bool          // Is the previous ping latency dodgy?
+	prDod   bool          // Did the previous ping of dodgy latency?
+	latency time.Duration // Latency of latest ping
+	pTime   time.Time     // Time latest ping was fired
+	nDodg   int
+}
 
 type connTracker struct {
 	isOutage           bool
@@ -29,6 +38,10 @@ var pLog, eLog, oLog *log.Logger
 var ipAddr string // User supplied IP address to ping to
 
 var connInfo = connTracker{isOutage: false}
+
+var spl []dLatPing // List of recent pings with dodgy latency
+var latSlice []float64
+var meanLat time.Duration
 
 func main() {
 	// Parse user flags
@@ -103,8 +116,11 @@ func runPing() {
 		pinger.OnRecv = func(pkt *ping.Packet) {
 			pLog.Printf("%d bytes from %s: icmp_seq=%d time=%v", pkt.Nbytes, pkt.IPAddr,
 				pkt.Seq, pkt.Rtt)
+			evaluateLatency(t, pkt.Rtt)
+			latSlice = append(latSlice, float64(pkt.Rtt.Nanoseconds()))
+			meanLat = time.Duration(stat.Mean(latSlice, nil)) * time.Nanosecond
+			fmt.Println(latSlice, meanLat)
 		}
-
 		pinger.Run() // Send the ping
 
 		// If no packets come back after timeout, start logging outage after 2 min
@@ -114,6 +130,7 @@ func runPing() {
 			// successful ping has to be this year (at the start of the run lsPing is
 			// set to 0) AND the time difference between the last successful ping and
 			// this one has to be more than 2 minutes
+			oLog.Printf("Timeout - Missed pong")
 			if connInfo.lastSuccessfulPing.Year() == t.Year() &&
 				t.Sub(connInfo.lastSuccessfulPing) > 2*time.Minute {
 				connInfo.isOutage = true
@@ -134,4 +151,47 @@ func runPing() {
 			connInfo.isOutage = false
 		}
 	}
+}
+
+// Evaluate latency of supplied ping. If ping has a long latency, add it to the
+// queue. If ping is normal (< 100 ms) then check if previous ping was also
+// normal. If so, finalise spl and log total duration of dodgy latency pings.
+// If previous ping was dodgy, ignore single normal ping and keep logging
+func evaluateLatency(t time.Time, rtt time.Duration) {
+	cutoff := meanLat * 3
+	prd := false // The provious ping is never dodgy by default
+
+	// Set up the provious dodgy ping to be that of the last item in spl
+	if len(spl) > 0 {
+		fmt.Println("spl is longer than 1. Setting prd to previous")
+		prd = spl[len(spl)-1].crDod
+	}
+
+	// If the ping RTT is more than the cutoff, treat as a dodgy ping and append
+	if rtt > cutoff && cutoff > 0 {
+		dPing := dLatPing{crDod: true, prDod: prd, latency: rtt, pTime: t}
+		spl = append(spl, dPing)
+		fmt.Printf("RTT of %v is longer than cutoff of %v. Appendling to spl\n", rtt, cutoff)
+	} else {
+		// If the latency is OK, check that of previous. If that one dodgy, keep logging
+		if prd {
+			dPing := dLatPing{crDod: false, prDod: prd, latency: rtt, pTime: t}
+			spl = append(spl, dPing)
+			fmt.Printf("RTT of %v is ok but previous bad. Appendling to spl\n", rtt)
+		} else { // If two decent latency pings in a row, then log total and reset spl
+			if len(spl) > 2 {
+				startTime := spl[0].pTime
+				endTime := spl[len(spl)-1].pTime
+				fmt.Printf("Period of flakey latency. Duration = %v",
+					endTime.Sub(startTime))
+				oLog.Printf("Period of flakey latency. Duration = %v",
+					endTime.Sub(startTime))
+				spl = nil
+			} else {
+				fmt.Println("No current issues")
+			}
+
+		}
+	}
+
 }
