@@ -222,6 +222,8 @@ func evaluateLatency(t time.Time, rtt time.Duration) {
 				tLog.Printf("Resetting spl: %v", spl)
 			} else {
 				tLog.Printf("Length of spl is less than 2: %v", len(spl))
+				spl = nil
+				tLog.Printf("Resetting spl: %v", spl)
 			}
 		}
 	}
