@@ -14,7 +14,6 @@ import (
 	"syscall"
 	"time"
 
-	stat "github.com/gonum/stat"
 	ping "github.com/sparrc/go-ping"
 )
 
@@ -32,6 +31,8 @@ type connTracker struct {
 	outageDuration     time.Duration
 }
 
+type queue []float64
+
 // Set up flags, loggers and global variables
 var importFlag = flag.String("i", "", "IP address or hostname to be pinged")
 var pLog, eLog, oLog *log.Logger
@@ -40,7 +41,7 @@ var ipAddr string // User supplied IP address to ping to
 var connInfo = connTracker{isOutage: false}
 
 var spl []dLatPing // List of recent pings with dodgy latency
-var latSlice []float64
+var latSlice queue
 var meanLat time.Duration
 
 func main() {
@@ -117,9 +118,6 @@ func runPing() {
 			pLog.Printf("%d bytes from %s: icmp_seq=%d time=%v", pkt.Nbytes, pkt.IPAddr,
 				pkt.Seq, pkt.Rtt)
 			evaluateLatency(t, pkt.Rtt)
-			latSlice = append(latSlice, float64(pkt.Rtt.Nanoseconds()))
-			meanLat = time.Duration(stat.Mean(latSlice, nil)) * time.Nanosecond
-			fmt.Println(latSlice, meanLat)
 		}
 		pinger.Run() // Send the ping
 
@@ -158,6 +156,7 @@ func runPing() {
 // normal. If so, finalise spl and log total duration of dodgy latency pings.
 // If previous ping was dodgy, ignore single normal ping and keep logging
 func evaluateLatency(t time.Time, rtt time.Duration) {
+	meanLat = time.Duration(latSlice.mean()) * time.Nanosecond
 	cutoff := meanLat * 3
 	prd := false // The provious ping is never dodgy by default
 
@@ -172,7 +171,10 @@ func evaluateLatency(t time.Time, rtt time.Duration) {
 		dPing := dLatPing{crDod: true, prDod: prd, latency: rtt, pTime: t}
 		spl = append(spl, dPing)
 		fmt.Printf("RTT of %v is longer than cutoff of %v. Appendling to spl\n", rtt, cutoff)
+		fmt.Println(latSlice, meanLat)
 	} else {
+		latSlice.add(float64(rtt.Nanoseconds()))
+		fmt.Println(latSlice, meanLat)
 		// If the latency is OK, check that of previous. If that one dodgy, keep logging
 		if prd {
 			dPing := dLatPing{crDod: false, prDod: prd, latency: rtt, pTime: t}
@@ -194,4 +196,25 @@ func evaluateLatency(t time.Time, rtt time.Duration) {
 		}
 	}
 
+}
+
+func (q *queue) add(f float64) {
+	iq := []float64(*q)
+	if len(iq) < 100 {
+		iq = append(iq, f)
+	} else {
+		iq = iq[1:]
+		iq = append(iq, f)
+	}
+	*q = queue(iq)
+}
+
+func (q *queue) mean() (m float64) {
+	var total float64
+	iq := []float64(*q)
+	for i := range iq {
+		total += iq[i]
+	}
+	m = total / float64(len(iq))
+	return m
 }
