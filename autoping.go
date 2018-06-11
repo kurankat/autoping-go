@@ -200,7 +200,7 @@ func evaluateLatency(t time.Time, rtt time.Duration) {
 
 func (q *queue) add(f float64) {
 	iq := []float64(*q)
-	if len(iq) < 100 {
+	if len(iq) < 10 {
 		iq = append(iq, f)
 	} else {
 		iq = iq[1:]
