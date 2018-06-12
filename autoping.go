@@ -88,10 +88,10 @@ func main() {
 	tLog.Printf("Setting up channel to handle interrupts")
 
 	// Launch separate goroutine to carry out ping every minute
-	for {
+	interval := time.NewTicker(1 * time.Minute)
+	for _ = range interval.C {
 		tLog.Printf("Running ping now")
 		go runPing()
-		time.Sleep(1 * time.Minute)
 	}
 }
 
