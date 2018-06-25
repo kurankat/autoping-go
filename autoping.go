@@ -19,8 +19,8 @@ import (
 )
 
 type dLatPing struct {
-	crDod   bool          // Is the previous ping latency dodgy?
-	prDod   bool          // Did the previous ping of dodgy latency?
+	crDod   bool          // Is the latest ping latency dodgy?
+	prDod   bool          // Did the previous ping have dodgy latency?
 	latency time.Duration // Latency of latest ping
 	pTime   time.Time     // Time latest ping was fired
 }
