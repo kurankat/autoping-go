@@ -210,7 +210,7 @@ func evaluateLatency(t time.Time, rtt time.Duration) {
 		}
 
 		tLog.Printf("Bad latency for %v pings", thisBadLatency.badLatencyNumber)
-	} else {
+	} else { // NORMAL PING RTT
 		// Because this is a 'normal' ping RTT, append it to queue to keep a running
 		// average
 		normalLatencies.add(float64(rtt.Nanoseconds()))
@@ -238,12 +238,13 @@ func evaluateLatency(t time.Time, rtt time.Duration) {
 				oLog.Printf("Period of flakey latency finished. Duration = %v",
 					thisBadLatency.badLatencyPeriodDuration)
 				dailyBadLatencyPeriods.addBadLatencyPeriod(&thisBadLatency)
-				thisBadLatency.badLatencyNumber = 0
-				tLog.Printf("Resetting badLatencyNumber to %v", thisBadLatency.badLatencyNumber)
-				thisBadLatency.isBadLatencyPeriod = false
-				tLog.Printf("Resetting isBadLatencyPeriod to %v", thisBadLatency.isBadLatencyPeriod)
+				thisBadLatency = badLatencyPeriod{isBadLatencyPeriod: false} // RESET
+				tLog.Printf("Reset thisBadLatency. badLatencyNumber: %v", thisBadLatency.badLatencyNumber)
+				tLog.Printf("Reset thisBadLatency. isBadLatencyPeriod: %v", thisBadLatency.isBadLatencyPeriod)
 			} else {
 				tLog.Printf("Length of badLatencyPings is less than 2: %v", thisBadLatency.badLatencyNumber)
+				thisBadLatency = badLatencyPeriod{isBadLatencyPeriod: false} // RESET
+				tLog.Printf("Reset thisBadLatency. badLatencyNumber to %v", thisBadLatency.badLatencyNumber)
 			}
 		}
 	}
@@ -326,9 +327,9 @@ func (c *connectionTracker) getLatency() time.Duration {
 	return c.latestPing.latency
 }
 
-func (c *connectionTracker) getPreviousPing() (p badPingInfo) {
-	return c.pingBeforeLatest
-}
+// func (c *connectionTracker) getPreviousPing() (p badPingInfo) {
+// 	return c.pingBeforeLatest
+// }
 
 type badPingInfo struct {
 	thisLatencyBad bool          // Is the latest ping latency dodgy?
